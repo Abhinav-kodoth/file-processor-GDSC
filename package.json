@@ -1,0 +1,21 @@
+{
+  "name": "file-processor",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "crypto": "^1.0.1",
+    "express": "^5.2.1",
+    "multer": "^2.0.2",
+    "node-notifier": "^10.0.1",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
+    "pdf-parse-fork": "^1.2.0",
+    "uuid": "^13.0.0"
+  }
+}

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>PDF Processor</title>
+
+  <link rel="stylesheet" href="style.css" />
+
+  
+</head>
+<body>
+  <div class="container">
+    <h2>PDF File Processor</h2>
+
+    <label>
+      Job Type
+      <select id="type">
+        <option value="PDF_MERGE">PDF Merge</option>
+        <option value="PAGE_COUNT">Page Count</option>
+        <option value="PDF_COMPRESS">PDF Compress</option>
+
+      </select>
+    </label>
+
+    <label>
+      Select PDF file(s)
+      <input type="file" id="files" multiple accept="application/pdf" />
+    </label>
+
+    <button type="button" onclick="submitJob()">Submit Job</button>
+
+    <p id="status"></p>
+    <a id="download"></a>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+
+</html>
