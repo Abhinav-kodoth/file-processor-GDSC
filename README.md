@@ -68,8 +68,13 @@ Follow these steps to clone and run the project locally.
 ###  Clone the repository
 
 ```bash
-git clone <repository URL>
+git clone 
 cd file-processor-GDSC
+```
+
+```bash
+mkdir uploads
+mkdir outputs
 ```
 
 ### Install dependencies
