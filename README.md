@@ -15,6 +15,10 @@ repeated CPU-heavy work
 - System-level notifications when a cached result is reused
 - No database required
 
+## Thought Process
+
+Since the project required asynchronous processing, I started by designing the system around a job-based flow where each request creates a job and the actual PDF processing happens in the background. While testing this setup, I noticed that many operations were naturally repeatable users might upload the same PDFs again for the same operation. This observation made it clear that the server was unnecessarily repeating heavy computation. To address this, I introduced content-based hashing, where the job type and the contents of the uploaded files together form a unique hashvalue for a request. Using this hashvalue, I implemented an in memory LRU cache so that recently processed jobs could reuse their results, allowing the system to skip expensive PDF operations when the same work is requested again.
+
 ## Project Structure
 
 ```
@@ -131,6 +135,14 @@ The project requires the following Node.js packages:
 - `pdf-parse` – Parse PDFs for text & metadata
 - `pdf-parse-fork` – Reliable PDF parsing
 - `uuid` – Unique job IDs
+
+## Scope for Improvements
+
+- Detect duplicate files on the client side to avoid re-uploading the same PDFs.
+- Store cache in a persistent system so results aren’t lost when the server restarts.
+- Use background workers to handle heavy PDF processing more efficiently.
+
+
 
 
 
