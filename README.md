@@ -1,6 +1,6 @@
 # File Processor – Async Job Processing 
 
-A production style **Node.js backend system** that processes file based jobs
+A **Node.js backend system** that processes file based jobs
 (PDF merge, compression, page count, etc.) **asynchronously**, with
 **job deduplication using an in-memory LRU cache** to avoid
 repeated CPU-heavy work
@@ -12,7 +12,7 @@ repeated CPU-heavy work
 - LRU in-memory cache to avoid duplicate processing
 - Worker-based architecture for CPU-heavy tasks
 - Lightweight frontend for job submission
-- **System-level notifications when a cached result is reused**
+- System-level notifications when a cached result is reused
 - No database required
 
 ## Project Structure
