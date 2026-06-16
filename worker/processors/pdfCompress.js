@@ -1,23 +1,45 @@
 const fs = require("fs");
 const path = require("path");
+const { compress } = require("compress-pdf");
 const { PDFDocument } = require("pdf-lib");
 
+// "screen"   = smallest file, lowest image quality
+// "ebook"    = good balance of size vs quality (default used here)
+// "printer"  / "prepress" = larger, higher fidelity
+const RESOLUTION = "ebook";
 
-module.exports=async function pdfCompress(job){
-    const inputPath=job.filepaths[0];
 
-    const pdfBytes=fs.readFileSync(inputPath);
+async function compressWithGhostscript(inputPath) {
+  return compress(inputPath, { resolution: RESOLUTION });
+}
 
-    const pdfDoc=await PDFDocument.load(pdfBytes);
+async function compressWithPdfLib(inputPath) {
+  const pdfBytes = fs.readFileSync(inputPath);
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  return pdfDoc.save({ useObjectStreams: true });
+}
 
-    const compressedBytes=await pdfDoc.save({
-        useObjectStreams: true,
-        addDefaultPage: false
-    });
+module.exports = async function pdfCompress(job) {
+  const inputPath = job.filepaths[0];
+  const outputPath = path.join("outputs", `${job.id}-compressed.pdf`);
 
-    const outputPath=path.join("outputs",`${job.id}-compressedBytes.pdf`);
+  let compressedBytes;
+  try {
+    compressedBytes = await compressWithGhostscript(inputPath);
+  } catch (err) {
+    console.warn(
+      "Ghostscript compression unavailable, falling back to pdf-lib:",
+      err.message
+    );
+    compressedBytes = await compressWithPdfLib(inputPath);
+  }
 
-    fs.writeFileSync(outputPath,compressedBytes);
+ 
+  const originalSize = fs.statSync(inputPath).size;
+  if (compressedBytes.length >= originalSize) {
+    compressedBytes = fs.readFileSync(inputPath);
+  }
 
-    job.resultPath=outputPath;
+  fs.writeFileSync(outputPath, compressedBytes);
+  job.resultPath = outputPath;
 };

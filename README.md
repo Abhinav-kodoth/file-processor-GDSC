@@ -1,149 +1,184 @@
-# File Processor – Async Job Processing 
+# File Processor – Async PDF Job Processing
 
-A **Node.js backend system** that processes file based jobs
-(PDF merge, compression, page count, etc.) **asynchronously**, with
-**job deduplication using an in-memory LRU cache** to avoid
-repeated CPU-heavy work
+A Node.js backend that processes PDF jobs (merge, compress, page count) **asynchronously**, with **content-based job deduplication** so identical work is never repeated.
 
-## ✨ Key Features
+## Key Features
 
-- Asynchronous job processing
--  job deduplication using input hashing
-- LRU in-memory cache to avoid duplicate processing
-- Worker-based architecture for CPU-heavy tasks
-- Lightweight frontend for job submission
-- System-level notifications when a cached result is reused
-- No database required
+- Asynchronous job processing — upload returns instantly with a job ID; the actual PDF work happens in the background
+- Job deduplication via SHA-256 hashing of job type + file contents
+- In-memory LRU cache (50 entries) so repeated requests reuse prior results instead of reprocessing
+- Real PDF compression via Ghostscript (through the `compress-pdf` package), with automatic fallback to structural-only compression if Ghostscript isn't available
+- OS-level desktop notification when a cached result is reused
+- No database required — everything lives in memory for the life of the process
 
-## Thought Process
+## How It Works
 
-Since the project required asynchronous processing, I started by designing the system around a job-based flow where each request creates a job and the actual PDF processing happens in the background. While testing this setup, I noticed that many operations were naturally repeatable users might upload the same PDFs again for the same operation. This observation made it clear that the server was unnecessarily repeating heavy computation. To address this, I introduced content-based hashing, where the job type and the contents of the uploaded files together form a unique hashvalue for a request. Using this hashvalue, I implemented an in memory LRU cache so that recently processed jobs could reuse their results, allowing the system to skip expensive PDF operations when the same work is requested again.
+1. **Upload** — The frontend (or any HTTP client) posts a job `type` and 1–5 files to `POST /jobs`. Multer saves the files to `uploads/`.
+2. **Hash & dedup check** — `hashService.js` streams the job type plus every file's contents through SHA-256 to produce one hash. `dedupService.js` checks this hash against an LRU cache.
+   - **Cache hit** → the job is immediately marked `DONE`, pointing at the previous result. A desktop notification fires.
+   - **Cache miss** → a new job is created with status `PENDING`.
+3. **Background worker** — `worker/processor.js` polls every 2 seconds for `PENDING` jobs, flips them to `PROCESSING`, and routes them to the matching processor:
+   - `PAGE_COUNT` → `worker/processors/pageCount.js`
+   - `PDF_MERGE` → `worker/processors/pdfMerge.js`
+   - `PDF_COMPRESS` → `worker/processors/pdfCompress.js`
+4. **Result + cache write** — On success, the output is written to `outputs/`, the job is marked `DONE`, and the result path is stored in the dedup cache for future identical requests.
+5. **Polling + download** — The frontend polls `GET /jobs/:id` every 2 seconds. Once `DONE`, it shows a link to `GET /jobs/:id/download`, which streams the result file.
 
 ## Project Structure
 
-```
+```bash
+
 file-processor/
+
 ├── controllers/
-│   └── job.js              # Handles incoming job requests
+
+│   └── job.js              # Validates requests, talks to the job service
+
 │
+
 ├── routes/
-│   └── job.js              # API route definitions
+
+│   └── job.js               # API route definitions + multer upload config
+
 │
+
 ├── service/
-│   ├── job.js              # Job lifecycle management
-│   ├── hashService.js      # Deterministic hashing of inputs
-│   └── dedupService.js     # LRU cache & deduplication logic
+
+│   ├── job.js                # Job lifecycle (create/get/update), in-memory job store
+
+│   ├── hashService.js        # SHA-256 hashing of job type + file contents
+
+│   └── dedupService.js       # LRU cache for completed job results
+
 │
+
 ├── worker/
-│   ├── processor.js        # Worker entry point
+
+│   ├── processor.js          # Polls for PENDING jobs every 2s, dispatches to processors
+
 │   └── processors/
-│       ├── pdfMerge.js     # PDF merge logic
-│       ├── pdfCompress.js  # PDF compression logic
-│       └── pageCount.js    # Page count extraction
+
+│       ├── pdfMerge.js        # Merges multiple PDFs into one
+
+│       ├── pdfCompress.js     # Compresses a PDF via Ghostscript (compress-pdf), pdf-lib fallback
+
+│       └── pageCount.js       # Extracts page count from a PDF
+
 │
+
 ├── frontend/
-│   ├── index.html          # UI for job submission
-│   ├── script.js           # Frontend logic
-│   └── style.css           # Basic styling
+
+│   ├── index.html
+
+│   ├── script.js              # Submits jobs, polls status, triggers download
+
+│   └── style.css
+
 │
-├── uploads/                # Runtime user uploads (gitignored)
-├── outputs/                # Generated files (gitignored)
+
+├── uploads/                  # Runtime user uploads (gitignored, create manually)
+
+├── outputs/                  # Generated results (gitignored, create manually)
+
 │
-├── index.js                # Application entry point
+
+├── index.js                  # Express app entry point
+
 ├── package.json
-├── package-lock.json
-├── .gitignore
+
 └── README.md
+
 ```
 
 ## Prerequisites
 
+- Node.js
 - npm
-- node.js
 
-## 💻 Installation
-
-
-
-Follow these steps to clone and run the project locally.
-
----
-
-###  Clone the repository
+## Installation
 
 ```bash
-git clone 
+git clone https://github.com/Abhinav-kodoth/file-processor-GDSC
 cd file-processor-GDSC
-```
 
-```bash
 mkdir uploads
 mkdir outputs
-```
 
-### Install dependencies
-
-```bash
 npm install
 ```
 
-### Run application
-``` bash
-npm start or node index.js
+`npm install` installs everything needed, including `compress-pdf`, which downloads its own bundled Ghostscript binary automatically (similar to how Puppeteer downloads a browser). No separate Ghostscript installation step is required.
+
+## Running the App
+
+```bash
+npm start
+# or
+node index.js
 ```
+
+Then open `http://localhost:3000` in your browser.
 
 ## Usage
 
-```bash
-Open your browser and navigate to:http://localhost:3000
-You can now:
+From the browser UI you can:
 
-Upload files
+- Select a job type (`PAGE_COUNT`, `PDF_MERGE`, or `PDF_COMPRESS`)
+- Upload one or more PDFs (up to 5 files, 5 MB each)
+- Submit the job and watch its status update live
+- Download the result once the job is `DONE`
+- See a desktop notification if the exact same job was already completed before
 
-Submit jobs
+## API Reference
 
-See job status
+| Method | Endpoint              | Description                                    |
+|--------|------------------------|------------------------------------------------|
+| POST   | `/jobs`                 | Create a job. Body: `type` + `files[]` (multipart) |
+| GET    | `/jobs/:id`              | Get job status (`PENDING` / `PROCESSING` / `DONE` / `FAILED`) |
+| GET    | `/jobs/:id/download`     | Download the result once the job is `DONE`      |
 
-Receive system notifications for duplicate jobs
-```
+**Job types and constraints:**
 
-## Project Notes
+- `PAGE_COUNT` — 1 PDF, returns a `.txt` file with the page count
+- `PDF_MERGE` — 2+ PDFs, returns one merged `.pdf`
+- `PDF_COMPRESS` — exactly 1 PDF, returns a compressed `.pdf`
 
-- Folders uploads/ and outputs/ are created automatically at runtime.
+## PDF Compression Details
 
-- Node-notifier triggers OS-level notifications when a cached job is reused.
+Compression runs through the `compress-pdf` package, which wraps Ghostscript to actually recompress embedded images and subset fonts — this is what gives meaningful size reduction (typically 20–60%, depending on how image-heavy the PDF is), as opposed to `pdf-lib` alone, which only repacks the PDF's internal structure and barely shrinks the file.
 
-- You do not need a database; all deduplication happens in-memory.
+The quality/size tradeoff is controlled by the `RESOLUTION` constant in `pdfCompress.js`:
+
+- `screen` — smallest file, lowest image quality
+- `ebook` — balanced (default)
+- `printer` / `prepress` — larger, higher fidelity
+
+If the bundled Ghostscript binary is ever unavailable on the host machine, the processor automatically falls back to `pdf-lib`'s structural compression instead of failing the job, and never returns a file larger than the original.
+
+## Dependencies
+
+- `express` – REST API
+- `multer` – File uploads
+- `pdf-lib` – PDF creation/merging, and the compression fallback
+- `pdf-parse-fork` – PDF text/page parsing
+- `compress-pdf` – Ghostscript-backed PDF compression
+- `uuid` – Unique job IDs
+- `node-notifier` – OS notifications on cache hits
 
 ## Common Issues
 
-- Permissions for node-notifier:
-  On some systems, OS notifications may require permissions. Make sure your system allows desktop notifications.
+- **node-notifier permissions** — Desktop notifications may require OS-level permission on some systems.
+- **Port conflicts** — If port 3000 is busy, change `PORT` in `index.js`.
+- **Compression download blocked** — If `compress-pdf`'s Ghostscript binary fails to download (restricted network/proxy), set `COMPRESS_PDF_SKIP_DOWNLOAD=true` and install Ghostscript manually, or just let it fall back to `pdf-lib` automatically.
 
-- Port conflicts:
-  If port 3000 is busy, you can change the port in index.js:
+## Notes & Limitations
 
-##  Dependencies
+- All job state and the dedup cache are in-memory — both reset on server restart.
+- No database; this is intentional for simplicity, not a temporary placeholder.
+- The worker loop is a simple `setInterval` poll, not a real task queue — fine for low volume, but won't scale to many concurrent jobs.
 
-The project requires the following Node.js packages:
+## Scope for Improvement
 
-- `express` – REST API endpoints
-- `multer` – File uploads
-- `crypto` – Deterministic input hashing
-- `node-notifier` – OS notifications for duplicate jobs
-- `pdf-lib` – Create/modify PDFs
-- `pdf-parse` – Parse PDFs for text & metadata
-- `pdf-parse-fork` – Reliable PDF parsing
-- `uuid` – Unique job IDs
-
-## Scope for Improvements
-
-- Detect duplicate files on the client side to avoid re-uploading the same PDFs.
-- Store cache in a persistent system so results aren’t lost when the server restarts.
-- Use background workers to handle heavy PDF processing more efficiently.
-
-
-
-
-
-
+- Detect duplicate files client-side to avoid re-uploading identical PDFs
+- Persist the dedup cache (e.g. Redis) so it survives restarts
+- Replace the polling worker with a real queue (BullMQ, etc.) for concurrency and retries
